@@ -368,7 +368,8 @@ def first_call_guess(req: dict) -> float:
     0.605달러가 들었다(출력만 센 어림은 0.32달러였다). 글자당 1.1토큰, 출력 스키마 1,200토큰(10/23 실측 1,170)으로 센다.
     """
     _, o, _, cw = PRICES[req["model"]]
-    chars = sum(len(b["text"]) for b in req["system"]) + sum(len(b["text"]) for m in req["messages"] for b in m["content"])
+    chars = (sum(len(b["text"]) for b in req.get("system", []))  # FANToM 직접 질의처럼 지시문이 없는 요청도 있다
+             + sum(len(b["text"]) for m in req["messages"] for b in m["content"]))
     return ((chars * 1.1 + 1200) * cw + req["max_tokens"] * o) / 1_000_000
 
 
@@ -520,6 +521,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-calls", type=int, default=60)
     p.add_argument("--classic", action="store_true", help="data/works의 작품(기본은 data/synthetic)")
     p.add_argument("--out", help="결과 폴더(기본 runs/onto-extract/<작품>-<모델>-<시각>)")
+    p.add_argument("--cassette", help="카세트 경로(기본 runs/onto-extract/cassette.jsonl). iCloud 밖에 두면 덧붙인 줄이 사라지지 않는다")
     args = parser.parse_args(argv)
 
     from sfqa.works import WORKS_ROOT
@@ -527,7 +529,8 @@ def main(argv: list[str] | None = None) -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out = Path(args.out) if args.out else RUNS / f"{args.work}-{args.model.removeprefix('claude-')}-{stamp}"
     report = run(args.work, args.model, args.upto, out, root=WORKS_ROOT if args.classic else SYNTHETIC_ROOT,
-                 max_usd=args.max_usd, max_calls=args.max_calls)
+                 max_usd=args.max_usd, max_calls=args.max_calls,
+                 cassette=Path(args.cassette) if args.cassette else RUNS / "cassette.jsonl")
     _print(report)
     print(f"결과: {out}")
     return 1 if report["stopped"] else 0

@@ -388,6 +388,7 @@ def main(argv: list[str] | None = None) -> int:
     pj.add_argument("--k", type=int, default=K)
     pj.add_argument("--support-sample", type=int, default=SUPPORT_SAMPLE)
     pj.add_argument("--redo-support", action="store_true", help="이전 근거 표본과 같은 사실들을 지금 요청으로 다시 판정한다")
+    pj.add_argument("--cassette", help="카세트 경로(기본 runs/onto-extract/judge-cassette.jsonl). iCloud 밖에 두면 덧붙인 줄이 사라지지 않는다")
     ps = sub.add_parser("score", help="판정 결과로 수치를 낸다(모델 호출 없음)")
     ps.add_argument("--run", required=True)
     ps.add_argument("--gold", required=True)
@@ -396,7 +397,8 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = Path(args.run)
     if args.cmd == "judge":
         out = judge(run_dir, args.gold, k=args.k, support_sample=args.support_sample, max_usd=args.max_usd,
-                    redo_support=args.redo_support)
+                    redo_support=args.redo_support,
+                    cassette=Path(args.cassette) if args.cassette else RUNS / "judge-cassette.jsonl")
         print(f"판정: 같은 사실 {len(out['match'])}건, 근거 {len(out['support'])}건, 실패 {len(out['failed'])}건, "
               f"새로 쓴 돈 ${out['spent_usd']}")
         return 1 if out["failed"] else 0
