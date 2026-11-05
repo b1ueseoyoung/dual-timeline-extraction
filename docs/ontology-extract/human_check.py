@@ -10,12 +10,17 @@
 
 실행(worktree 루트):
   PYTHONPATH=src uv run --no-sync python docs/ontology-extract/human_check.py make
+  PYTHONPATH=src uv run --no-sync python docs/ontology-extract/human_check.py scenes
   PYTHONPATH=src uv run --no-sync python docs/ontology-extract/human_check.py score eval/human-check/match-check-A.csv [...-B.csv]
+
+scenes는 gold-check 행마다 힌트 줄 앞뒤 본문을 모은 읽기용 파일(gold-check-scenes.txt)을 만든다.
+11/05 첫 B 시트(gold-check-B-v1.csv)가 힌트 줄만 보고 판단해 대사를 한 사람이나 그 자리에 있는 인물을 놓쳤기 때문이다.
 """
 
 import csv
 import json
 import random
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -119,6 +124,46 @@ def make() -> None:
     print(f"{OUT}: match-check {len(m)}행, early-check {len(e)}행, gold-check {len(g)}행({dict(kinds)})")
 
 
+SCENE = (20, 10)  # 힌트 줄 앞 20줄, 뒤 10줄(빈 줄 포함)
+SCENE_HEAD = """정답 확인표(gold-check) 장면 모음
+
+- 행마다 hint_lines의 줄(▶) 앞뒤 본문을 모았음. 줄 앞 숫자는 그 화의 줄 번호(빈 줄도 셈)
+- 힌트 줄만 보면 대사를 한 사람이나 그 자리에 있는 인물이 빠지기 쉬움. 앞뒤 줄을 읽고 판단함
+- 장면만으로 부족하면 그 화 전체를 읽음(검증 꾸러미의 texts/<작품>/chNN.txt, 저장소의 data/synthetic/<작품>/clean/chNN.txt)
+- [행 N]은 시트의 행 번호임(머리줄이 1행)
+"""
+
+
+def scenes() -> None:
+    """gold-check.csv 행마다 힌트 줄 앞뒤 본문을 모은 읽기용 파일을 만든다."""
+    with (OUT / "gold-check.csv").open(encoding="utf-8-sig") as fh:
+        rows = list(csv.DictReader(fh))
+    texts = {work: load_texts(load_work(work, SYNTHETIC_ROOT)) for work in RUNS}
+    out = [SCENE_HEAD]
+    for n, r in enumerate(rows, 2):
+        ch = int(r["chapter"])
+        lines = texts[r["work"]][ch].splitlines()
+        hints = {int(x) for x in re.findall(r"(?:^|/ )(\d+): ", r["hint_lines"])}
+        keep = sorted({i for h in hints for i in range(max(1, h - SCENE[0]), min(len(lines), h + SCENE[1]) + 1)})
+        who = f" · {r['character']}" if r["character"] else ""
+        out += ["=" * 60, f"[행 {n}] {r['kind']} · {r['work']} · {r['fact_id']} · {ch}화{who}",
+                f"사실: {r['statement']}", f"질문: {r['question']}"]
+        if r["hint_note"]:
+            out.append(f"설정: {r['hint_note']}")
+        out += [f"그 화 전체: texts/{r['work']}/ch{ch:02d}.txt", "-" * 60]
+        prev = None
+        for i in keep:
+            if prev is not None and i != prev + 1:
+                out.append("         …")
+            prev = i
+            if lines[i - 1].strip():
+                out.append(f"{'▶' if i in hints else ' '}{i:>5}  {lines[i - 1].rstrip()}")
+        out.append("")
+    path = OUT / "gold-check-scenes.txt"
+    path.write_text("\n".join(out), encoding="utf-8")
+    print(f"{path}: {len(rows)}행")
+
+
 def kappa(a: list[str], b: list[str]) -> float | None:
     """두 검증자의 예·아니오 일치도(Cohen's kappa)."""
     n = len(a)
@@ -126,6 +171,15 @@ def kappa(a: list[str], b: list[str]) -> float | None:
         return None
     po = sum(x == y for x, y in zip(a, b)) / n
     pe = sum((a.count(v) / n) * (b.count(v) / n) for v in YES_NO)
+    return round((po - pe) / (1 - pe), 3) if pe < 1 else None
+
+
+def ac1(a: list[str], b: list[str]) -> float | None:
+    """Gwet AC1(두 검증자, 예·아니오). 한쪽 답이 몰리면 카파가 낮게 나오므로 PABAK(2·일치율−1)와 같이 본다."""
+    n = len(a)
+    po = sum(x == y for x, y in zip(a, b)) / n
+    q = (a.count("예") + b.count("예")) / (2 * n)
+    pe = 2 * q * (1 - q)
     return round((po - pe) / (1 - pe), 3) if pe < 1 else None
 
 
@@ -151,12 +205,19 @@ def score(paths: list[str]) -> None:
         if both:
             xs, ys = [x for x, _ in both], [y for _, y in both]
             agree = sum(x == y for x, y in both)
-            print(f"두 검증자: 함께 채운 {len(both)}행, 일치 {agree}행({agree / len(both):.3f}), 카파 {kappa(xs, ys)}")
+            po = agree / len(both)
+            print(f"두 검증자: 함께 채운 {len(both)}행, 일치 {agree}행({po:.3f}), 카파 {kappa(xs, ys)}, "
+                  f"PABAK {2 * po - 1:.3f}, AC1 {ac1(xs, ys)}")
+            for name, ans in (("앞", xs), ("뒤", ys)):
+                if len(set(ans)) == 1:
+                    print(f"  {name} 검증자가 모두 '{ans[0]}'라 일치도는 다른 검증자의 '{ans[0]}' 비율과 같아짐(정보 없음)")
 
 
 if __name__ == "__main__":
     if sys.argv[1:2] == ["make"]:
         make()
+    elif sys.argv[1:2] == ["scenes"]:
+        scenes()
     elif sys.argv[1:2] == ["score"] and sys.argv[2:]:
         score(sys.argv[2:])
     else:
