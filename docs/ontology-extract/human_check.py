@@ -12,6 +12,7 @@
   PYTHONPATH=src uv run --no-sync python docs/ontology-extract/human_check.py make
   PYTHONPATH=src uv run --no-sync python docs/ontology-extract/human_check.py scenes
   PYTHONPATH=src uv run --no-sync python docs/ontology-extract/human_check.py score eval/human-check/match-check-A.csv [...-B.csv]
+  PYTHONPATH=src uv run --no-sync python docs/ontology-extract/human_check.py final
 
 scenes는 gold-check 행마다 힌트 줄 앞뒤 본문을 모은 읽기용 파일(gold-check-scenes.txt)을 만든다.
 11/05 첫 B 시트(gold-check-B-v1.csv)가 힌트 줄만 보고 판단해 대사를 한 사람이나 그 자리에 있는 인물을 놓쳤기 때문이다.
@@ -213,6 +214,40 @@ def score(paths: list[str]) -> None:
                     print(f"  {name} 검증자가 모두 '{ans[0]}'라 일치도는 다른 검증자의 '{ans[0]}' 비율과 같아짐(정보 없음)")
 
 
+FINAL_SHEETS = (("정답", "gold-check", "C", "fact_id", "statement"),
+                ("판정", "match-check", "B", "gold_id", "gold_statement"),
+                ("조기 공개", "early-check", "B", "gold_id", "gold_statement"))
+
+
+def read_rows(path: Path) -> list[dict]:
+    with path.open(encoding="utf-8-sig") as fh:
+        return list(csv.DictReader(fh))
+
+
+def final() -> None:
+    """두 검증자가 갈린 행의 최종 판정을 저자 A의 답으로 정해 final-labels.csv에 모은다(11/06 사용자 결정).
+
+    합의가 아니라 저자 단독 결정이다. 검증자별 시트는 고치지 않고, 일치도는 언제나 시트의 독립 판단으로 잰다.
+    """
+    rows = []
+    for sheet, stem, second, key, text in FINAL_SHEETS:
+        a_path, b_path = OUT / f"{stem}-A.csv", OUT / f"{stem}-{second}.csv"
+        col = read_answers(a_path)[0]
+        a_rows, b_rows = read_rows(a_path), read_rows(b_path)
+        disputed = 0
+        for n, (a, b) in enumerate(zip(a_rows, b_rows, strict=True), 2):
+            if (a["work"], a[key]) != (b["work"], b[key]):
+                sys.exit(f"{stem} {n}행: A와 {second}의 항목이 다름")
+            x, y = a[col].strip(), b[col].strip()
+            disputed += x != y
+            rows.append({"sheet": sheet, "row": n, "work": a["work"], "item": a[key], "statement": a[text], "column": col,
+                         "answer_A": x, "second_rater": second, "answer_second": y, "disputed": "예" if x != y else "아니오",
+                         "final": x, "decided_by": "저자 A 단독" if x != y else "두 검증자 일치"})
+        print(f"{sheet}: {len(a_rows)}행, 갈림 {disputed}행, 최종 '예' {sum(r['final'] == '예' for r in rows if r['sheet'] == sheet)}")
+    write(OUT / "final-labels.csv", list(rows[0]), rows)
+    print(f"{OUT / 'final-labels.csv'}: {len(rows)}행")
+
+
 if __name__ == "__main__":
     if sys.argv[1:2] == ["make"]:
         make()
@@ -220,5 +255,7 @@ if __name__ == "__main__":
         scenes()
     elif sys.argv[1:2] == ["score"] and sys.argv[2:]:
         score(sys.argv[2:])
+    elif sys.argv[1:2] == ["final"]:
+        final()
     else:
         sys.exit(__doc__)
