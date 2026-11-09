@@ -38,6 +38,7 @@ class Knowing(BaseModel):
     character: str
     from_ch: int = Field(ge=0)
     note: str = ""
+    basis: str = ""  # 재검토한 쌍의 근거 종류(eval/gold-fix/README.md). latest_by면 from_ch는 인지 시점의 상한이다. 빈칸은 재검토하지 않았다는 뜻이다
 
 
 class Evidence(BaseModel):
@@ -358,7 +359,7 @@ def _lines_with(text: str, keywords: list[str]) -> list[int]:
 
 
 def _knowing(k: dict) -> Knowing:
-    return Knowing(character=k["character"], from_ch=int(k["from_ep"]), note=k.get("note", ""))
+    return Knowing(character=k["character"], from_ch=int(k["from_ep"]), note=k.get("note", ""), basis=k.get("basis", ""))
 
 
 def _character(c: dict) -> Character:

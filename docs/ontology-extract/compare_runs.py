@@ -54,7 +54,8 @@ def pair_sets(gold: Ontology, parts: dict, upto: int, comparable: set[str]) -> t
     return early, tp, fp, fn
 
 
-def view_cells(gold: Ontology, parts: dict, upto: int, first: dict[str, int], whole: bool = True) -> Counter:
+def view_cells(gold: Ontology, parts: dict, upto: int, first: dict[str, int], whole: bool = True, skip: frozenset = frozenset()) -> Counter:
+    """skip의 (사실, 인물) 쌍은 세지 않는다. 시점이 상한으로만 기록된 쌍을 뺀 민감도에 쓴다."""
     cells = Counter()
     for g in (f for f in gold.facts if f.reveal_ch <= upto):
         gs = {k.character: k.from_ch for k in g.known_by}
@@ -65,6 +66,8 @@ def view_cells(gold: Ontology, parts: dict, upto: int, first: dict[str, int], wh
             es = {w: min(p[w] for p in ps if w in p) for w in set().union(*ps)}
         for n in range(g.reveal_ch, upto + 1):
             for who in (c for c, fc in first.items() if fc <= n):
+                if (g.id, who) in skip:
+                    continue
                 gk, ek = gs.get(who, NEVER) <= n, es.get(who, NEVER) <= n
                 if gk and ek:
                     cells["맞게 앎"] += 1

@@ -12,6 +12,8 @@
      일부만 담은 짝)의 앞당김은 따로 센다. 10/24까지는 가장 이른 부분을 써서, 앞 장의 부분 사실(2장 '왼손 장갑')로 뒤 장
      정답(8장 '장갑 속 서약흔')을 일찍 안다고 셌다.
    - 공개 장 앞당김과 아는 장 앞당김은 사례 목록을 따로 낸다(사람이 보고 실제 누출인지 판단한다).
+   - 정답의 basis가 latest_by인 쌍은 from_ch가 인지 시점의 상한이다. 상한보다 늦으면 since_late_bound로 세고, 상한 이하는 이른지 맞는지 알 수 없어
+     since_bound_unknown으로만 센다. 이른 인지와 시점 일치로 세지 않고, 공개 뒤에 알게 되는지도 알 수 없어 after_reveal에서 뺀다.
    - 사람이 판정을 확인할 30개 표(review-matches.csv)를 만든다.
 
 실행: uv run python -m sfqa.onto_eval judge --run runs/onto-extract/<결과> --gold wn01-rofan --max-usd 0.6
@@ -302,7 +304,8 @@ def score(gold: Ontology, onto: Ontology, upto: int, judgments: dict, texts: Map
     comparable = {c.id for c in gold.characters if any(f in seen for f in c.forms)}
     out = {"upto": upto, "gold_facts": 0, "full": 0, "partial": 0, "missed": 0, "by_category": {}, "twists": Counter(),
            "reveal": Counter(), "reveal_early": [], "tp": 0, "fp": 0, "fn": 0, "since_early": [], "since_early_partial": [],
-           "since_late": 0, "after_reveal": 0, "after_reveal_hit": 0, "comparable": sorted(comparable)}
+           "since_late": 0, "since_same": 0, "since_late_bound": 0, "since_bound_unknown": 0,
+           "after_reveal": 0, "after_reveal_hit": 0, "comparable": sorted(comparable)}
     cats: dict[str, Counter] = {}
     for g in (f for f in gold.facts if f.reveal_ch <= upto):
         out["gold_facts"] += 1
@@ -321,6 +324,7 @@ def score(gold: Ontology, onto: Ontology, upto: int, judgments: dict, texts: Map
             out["reveal_early"].append({"gold": g.id, "gold_ch": g.reveal_ch, "gold_statement": g.statement,
                                         "extracted": e, "extracted_ch": first, "extracted_statement": facts[e].statement})
         gk = {k.character: k.from_ch for k in g.known_by if k.from_ch <= upto and k.character in comparable}
+        bound = {k.character for k in g.known_by if k.basis == "latest_by"}
         parts = []  # 짝지어진 추출 사실마다 인물 → 아는 장
         for e in j["ids"]:
             known = ({c: 0 for c in comparable} if facts[e].common
@@ -336,12 +340,19 @@ def score(gold: Ontology, onto: Ontology, upto: int, judgments: dict, texts: Map
         # 아는 장 비교: 정답 사실 전체를 안 장 = 모든 부분을 알게 된 가장 늦은 장. 부분 짝은 따로 센다(정답 일부만 담았다).
         whole = {who: max(p[who] for p in parts) for who in set.intersection(*(set(p) for p in parts))}
         for who, s in whole.items():
-            if who in gk and s < gk[who]:
+            if who not in gk:
+                continue
+            if who in bound:
+                if s <= gk[who]:
+                    out["since_bound_unknown"] += 1
+                elif kind == "full":
+                    out["since_late_bound"] += 1
+            elif s < gk[who]:
                 out["since_early_partial" if kind == "partial" else "since_early"].append(
                     {"gold": g.id, "character": who, "extracted": s, "gold_since": gk[who], "statement": g.statement})
-            elif who in gk and s > gk[who] and kind == "full":
-                out["since_late"] += 1
-        after = [who for who, s in gk.items() if s > g.reveal_ch]
+            elif kind == "full":
+                out["since_late" if s > gk[who] else "since_same"] += 1
+        after = [who for who, s in gk.items() if s > g.reveal_ch and who not in bound]
         out["after_reveal"] += len(after)
         out["after_reveal_hit"] += sum(1 for who in after if who in ek)
     out["by_category"] = {c: dict(v) for c, v in sorted(cats.items())}

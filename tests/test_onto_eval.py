@@ -109,6 +109,22 @@ def test_since_uses_the_latest_part_and_sets_partial_matches_aside():
     assert s["since_early"] == [] and [e["gold"] for e in s["since_early_partial"]] == ["f3"]
 
 
+def test_latest_by_is_an_upper_bound_not_an_exact_chapter():
+    """상한만 아는 쌍은 이른 인지와 시점 일치로 세지 않고, 상한보다 늦을 때만 늦음으로 센다. 공개 뒤에 안다고도 세지 않는다."""
+    people = [Character(id="a", name="가나다", first_ch=1), Character(id="b", name="라마바", first_ch=1), Character(id="c", name="사아자", first_ch=1)]
+    gold = Ontology(work="g", title="정답", chapters=5, source="test", characters=people,
+                    facts=[Fact(id="f1", statement="사실", reveal_ch=1,
+                                known_by=[Knowing(character=c, from_ch=3, basis="latest_by") for c in "abc"])])
+    onto = Ontology(work="g", title="정답", chapters=5, source="extract:test", characters=people,
+                    facts=[Fact(id="c1-1", statement="사실", reveal_ch=1, known_by=[k("a", 2), k("b", 3), k("c", 4)])])
+    judgments = {"match": {"f1": {"ids": ["c1-1"], "partial": False}}, "support": {}}
+    s = score(gold, onto, 5, judgments, {n: "가나다 라마바 사아자" for n in range(1, 6)})
+    assert (s["tp"], s["fp"], s["fn"]) == (3, 0, 0)
+    assert s["since_bound_unknown"] == 2 and s["since_late_bound"] == 1
+    assert s["since_early"] == [] and s["since_same"] == 0 and s["since_late"] == 0
+    assert s["after_reveal"] == 0
+
+
 def test_run_batch_reuses_the_cassette_and_resends_failures(tmp_path):
     items = {"m-f1": match_request(GOLD.facts[0], EXTRACTED.facts[:1]), "m-f2": match_request(GOLD.facts[1], EXTRACTED.facts[1:2])}
     sdk = fake_sdk(lambda cid: None if cid == "m-f2" else {"matches": [1], "partial": False, "reason": "같다"})

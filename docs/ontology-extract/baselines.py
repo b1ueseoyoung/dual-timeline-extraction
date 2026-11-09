@@ -26,8 +26,9 @@ def ratio(a: int, b: int) -> float | None:
     return round(a / b, 3) if b else None
 
 
-def compare(run: str, work: str) -> dict:
-    gold = from_synthetic(work)
+def compare(run: str, work: str, gold: Ontology | None = None, skip: frozenset = frozenset()) -> dict:
+    """gold를 주면 그 정답으로 잰다(민감도). skip의 (사실, 인물) 쌍은 보기 칸에서 뺀다."""
+    gold = gold or from_synthetic(work)
     _, ev, parts = load(run, gold)
     upto, comparable = ev["upto"], set(ev["comparable"])
     d = Path(run)
@@ -45,7 +46,7 @@ def compare(run: str, work: str) -> dict:
     out = {}
     for label, p in (("추출", parts), ("독자 축만", reader), ("장면 동석", scene)):
         _, tp, fp, fn = pair_sets(gold, p, upto, comparable)
-        cells = view_cells(gold, p, upto, first, whole=False)
+        cells = view_cells(gold, p, upto, first, whole=False, skip=skip)
         vt, vn = cells["맞게 앎"], cells["모름"]
         vf = cells["더 앎(정답은 뒤에 앎)"] + cells["더 앎(정답은 범위 끝까지 모름)"]
         out[label] = {"쌍 정밀도": ratio(len(tp), len(tp) + len(fp)), "쌍 재현율": ratio(len(tp), len(tp) + len(fn)),
