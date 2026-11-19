@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.pytest_cache/
+# 데이터와 실행 결과는 저장소에 올리지 않는다
+data/
+runs/
+eval/
