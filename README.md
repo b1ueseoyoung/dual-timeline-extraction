@@ -25,3 +25,7 @@ Code for extracting, from serialized fiction, the chapter in which each fact is 
 ## 출처
 
 원래 프로젝트에서 추출·평가에 쓰는 모듈만 옮겼습니다. `gold.py`에는 본문을 읽는 `load_texts`만 남겼습니다.
+
+## 라이선스
+
+MIT 라이선스입니다. `LICENSE` 파일을 보세요.
